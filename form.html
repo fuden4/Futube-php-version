@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>رفع فيديو - Fuden</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, sans-serif;
+      background: #0a0e27;
+      color: #fff;
+      padding: 2rem;
+      margin: 0;
+    }
+
+    .upload-form {
+      max-width: 600px;
+      margin: auto;
+      background: rgba(255, 255, 255, 0.05);
+      padding: 2rem;
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(10px);
+    }
+
+    .upload-form h2 {
+      text-align: center;
+      margin-bottom: 2rem;
+      color: #4ecdc4;
+    }
+
+    .upload-form label {
+      display: block;
+      margin-bottom: 0.5rem;
+      color: #4ecdc4;
+      font-weight: bold;
+    }
+
+    .upload-form input,
+    .upload-form textarea,
+    .upload-form select {
+      width: 100%;
+      margin-bottom: 1rem;
+      padding: 0.8rem 1rem;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+      font-size: 1rem;
+      box-sizing: border-box;
+    }
+
+    .upload-form input:focus,
+    .upload-form textarea:focus,
+    .upload-form select:focus {
+      outline: none;
+      border-color: #4ecdc4;
+      box-shadow: 0 0 10px rgba(78, 205, 196, 0.3);
+    }
+
+    .upload-form textarea {
+      resize: vertical;
+      min-height: 100px;
+    }
+
+    .upload-form button {
+      width: 100%;
+      padding: 1rem;
+      border: none;
+      border-radius: 25px;
+      background: linear-gradient(45deg, #4ecdc4, #ff6b6b);
+      color: #fff;
+      font-size: 1.1rem;
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+
+    .upload-form button:hover {
+      transform: translateY(-2px);
+    }
+
+    .upload-form button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .progress-bar {
+      width: 100%;
+      height: 10px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+      overflow: hidden;
+      margin: 1rem 0;
+      display: none;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(45deg, #4ecdc4, #ff6b6b);
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+
+    .popup {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      padding: 1rem 2rem;
+      border-radius: 10px;
+      display: none;
+      z-index: 1000;
+      font-weight: bold;
+      animation: slideIn 0.3s ease;
+    }
+
+    .popup.success {
+      background: #4ecdc4;
+      color: #000;
+    }
+
+    .popup.error {
+      background: #ff6b6b;
+      color: #fff;
+    }
+
+    @keyframes slideIn {
+      from {
+        transform: translateX(100%);
+        opacity: 0;
+      }
+      to {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    }
+
+    .video-option {
+      background: rgba(255, 255, 255, 0.05);
+      padding: 1rem;
+      border-radius: 10px;
+      margin-bottom: 1rem;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .video-option.active {
+      border-color: #4ecdc4;
+      background: rgba(78, 205, 196, 0.1);
+    }
+
+    .radio-group {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .radio-group label {
+      display: flex;
+      align-items: center;
+      cursor: pointer;
+      background: rgba(255, 255, 255, 0.05);
+      padding: 0.5rem 1rem;
+      border-radius: 25px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      transition: all 0.3s;
+    }
+
+    .radio-group input[type="radio"] {
+      margin-left: 0.5rem;
+      width: auto;
+      margin-bottom: 0;
+    }
+
+    .radio-group label:hover,
+    .radio-group label.active {
+      border-color: #4ecdc4;
+      background: rgba(78, 205, 196, 0.2);
+    }
+
+    .file-input-wrapper {
+      position: relative;
+      display: inline-block;
+      width: 100%;
+    }
+
+    .file-input-wrapper input[type="file"] {
+      opacity: 0;
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      cursor: pointer;
+    }
+
+    .file-input-display {
+      display: block;
+      padding: 0.8rem 1rem;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+
+    .file-input-display:hover {
+      border-color: #4ecdc4;
+      background: rgba(78, 205, 196, 0.1);
+    }
+  </style>
+</head>
+<body>
+
+<div class="popup" id="popup"></div>
+
+<form id="videoForm" class="upload-form" enctype="multipart/form-data">
+  <h2>📤 رفع فيديو جديد</h2>
+
+  <label for="title">📝 عنوان الفيديو:</label>
+  <input type="text" id="title" name="title" placeholder="عنوان الفيديو" required>
+
+  <label for="description">📋 وصف الفيديو:</label>
+  <textarea id="description" name="description" placeholder="نبذة عن الفيديو..."></textarea>
+
+  <label for="category">📂 الفئة:</label>
+  <select id="category" name="category" required>
+    <option disabled selected>اختر الفئة</option>
+    <option value="movies">🎬 أفلام</option>
+    <option value="series">📺 مسلسلات</option>
+    <option value="documentaries">📚 وثائقيات</option>
+    <option value="anime">🎌 أنمي</option>
+    <option value="live">📡 بث مباشر</option>
+  </select>
+
+  <label>🎥 نوع الفيديو:</label>
+  <div class="radio-group">
+    <label class="active">
+      <input type="radio" name="video_type" value="local" checked>
+      ملف محلي
+    </label>
+    <label>
+      <input type="radio" name="video_type" value="vimeo">
+      رابط Vimeo
+    </label>
+  </div>
+
+  <div id="localVideoSection" class="video-option active">
+    <label for="video_file">📁 ملف الفيديو:</label>
+    <div class="file-input-wrapper">
+      <input type="file" id="video_file" name="video_file" accept="video/*">
+      <span class="file-input-display">اختر ملف الفيديو</span>
+    </div>
+  </div>
+
+  <div id="vimeoSection" class="video-option" style="display: none;">
+    <label for="vimeo_link">🌐 رابط Vimeo:</label>
+    <input type="url" id="vimeo_link" name="vimeo_link" placeholder="https://vimeo.com/...">
+  </div>
+
+  <label for="thumb">🖼️ صورة مصغرة:</label>
+  <div class="file-input-wrapper">
+    <input type="file" id="thumb" name="thumb" accept="image/*" required>
+    <span class="file-input-display">اختر صورة مصغرة</span>
+  </div>
+
+  <label for="duration">⏱️ مدة الفيديو:</label>
+  <input type="text" id="duration" name="duration" placeholder="مثال: 2h 15m" required>
+
+  <div class="progress-bar" id="progressBar">
+    <div class="progress-fill" id="progressFill"></div>
+  </div>
+
+  <button type="submit" id="submitBtn">🚀 رفع الفيديو</button>
+</form>
+
+<script>
+  const form = document.getElementById('videoForm');
+  const progressBar = document.getElementById('progressBar');
+  const progressFill = document.getElementById('progressFill');
+  const popup = document.getElementById('popup');
+  const submitBtn = document.getElementById('submitBtn');
+  
+  // إدارة نوع الفيديو
+  const videoTypeRadios = document.querySelectorAll('input[name="video_type"]');
+  const localSection = document.getElementById('localVideoSection');
+  const vimeoSection = document.getElementById('vimeoSection');
+  const radioLabels = document.querySelectorAll('.radio-group label');
+  
+  videoTypeRadios.forEach((radio, index) => {
+    radio.addEventListener('change', function() {
+      // تحديث المظهر
+      radioLabels.forEach(label => label.classList.remove('active'));
+      radioLabels[index].classList.add('active');
+      
+      if (this.value === 'local') {
+        localSection.style.display = 'block';
+        localSection.classList.add('active');
+        vimeoSection.style.display = 'none';
+        vimeoSection.classList.remove('active');
+        document.getElementById('video_file').required = true;
+        document.getElementById('vimeo_link').required = false;
+      } else {
+        localSection.style.display = 'none';
+        localSection.classList.remove('active');
+        vimeoSection.style.display = 'block';
+        vimeoSection.classList.add('active');
+        document.getElementById('video_file').required = false;
+        document.getElementById('vimeo_link').required = true;
+      }
+    });
+  });
+
+  // تحسين عرض اختيار الملفات
+  document.querySelectorAll('input[type="file"]').forEach(input => {
+    input.addEventListener('change', function() {
+      const display = this.parentElement.querySelector('.file-input-display');
+      if (this.files.length > 0) {
+        display.textContent = this.files[0].name;
+        display.style.color = '#4ecdc4';
+      }
+    });
+  });
+
+  // إرسال النموذج
+  form.addEventListener('submit', function(e) {
+    e.preventDefault();
+
+    // التحقق من البيانات
+    const videoType = document.querySelector('input[name="video_type"]:checked').value;
+    const videoFile = document.getElementById('video_file').files[0];
+    const vimeoLink = document.getElementById('vimeo_link').value;
+    
+    if (videoType === 'local' && !videoFile) {
+      showPopup('يرجى اختيار ملف الفيديو', 'error');
+      return;
+    }
+    
+    if (videoType === 'vimeo' && !vimeoLink) {
+      showPopup('يرجى إدخال رابط Vimeo', 'error');
+      return;
+    }
+
+    const formData = new FormData(form);
+    const xhr = new XMLHttpRequest();
+
+    // تعطيل الزر وإظهار شريط التقدم
+    submitBtn.disabled = true;
+    submitBtn.textContent = '⏳ جاري الرفع...';
+    progressBar.style.display = 'block';
+
+    xhr.open('POST', 'form.php', true);
+
+    // متابعة تقدم الرفع
+    xhr.upload.onprogress = function(e) {
+      if (e.lengthComputable) {
+        const percent = Math.round((e.loaded / e.total) * 100);
+        progressFill.style.width = percent + '%';
+      }
+    };
+
+    // معالجة الاستجابة
+    xhr.onload = function() {
+      submitBtn.disabled = false;
+      submitBtn.textContent = '🚀 رفع الفيديو';
+      progressBar.style.display = 'none';
+      progressFill.style.width = '0%';
+
+      try {
+        const response = JSON.parse(xhr.responseText);
+        
+        if (response.success) {
+          form.reset();
+          // إعادة تعيين عروض الملفات
+          document.querySelectorAll('.file-input-display').forEach(display => {
+            display.textContent = display.textContent.includes('فيديو') ? 'اختر ملف الفيديو' : 'اختر صورة مصغرة';
+            display.style.color = '';
+          });
+          showPopup('✅ تم رفع الفيديو بنجاح!', 'success');
+        } else {
+          showPopup('❌ خطأ: ' + (response.error || 'حدث خطأ غير معروف'), 'error');
+        }
+      } catch (e) {
+        showPopup('❌ خطأ في معالجة الاستجابة', 'error');
+      }
+    };
+
+    xhr.onerror = function() {
+      submitBtn.disabled = false;
+      submitBtn.textContent = '🚀 رفع الفيديو';
+      progressBar.style.display = 'none';
+      progressFill.style.width = '0%';
+      showPopup('❌ خطأ في الاتصال', 'error');
+    };
+
+    xhr.send(formData);
+  });
+
+  function showPopup(message, type) {
+    popup.textContent = message;
+    popup.className = `popup ${type}`;
+    popup.style.display = 'block';
+    
+    setTimeout(() => {
+      popup.style.display = 'none';
+    }, 5000);
+  }
+</script>
+
+</body>
+</html>
