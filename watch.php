@@ -916,6 +916,11 @@ function setupVideoEventListeners() {
              toggleControlsVisibility();
         }
     });
+    video.addEventListener('touchstart', (e) => {
+        if (e.target === video) {
+            toggleControlsVisibility();
+        }
+    });
     customControls?.addEventListener('click', (e) => {
         e.stopPropagation(); 
         showControlsAndResetTimeout(); 
