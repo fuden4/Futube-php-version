@@ -1,55 +1,109 @@
 <?php
-require 'config.php';                // PDO connection
-$id = (int)($_GET['id'] ?? 0);       // SQL-Injection safe
+session_start();
+require 'config.php'; // اتصال PDO
 
-// 1) Fetch current video data
-$stmt = $pdo->prepare("SELECT * FROM videos WHERE id = ?");
-$stmt->execute([$id]);
-$video = $stmt->fetch(PDO::FETCH_ASSOC);
+$id = (int)($_GET['id'] ?? 0); // حمايـة من SQL-Injection
+
+/* ==== التحقق من حالة تسجيل الدخول ==== */
+$is_logged_in            = false;
+$current_user_id         = null;
+$current_user_profile_image = 'images/default_avatar.png';
+
+if (isset($_SESSION['user_id'])) {
+    $is_logged_in  = true;
+    $current_user_id = $_SESSION['user_id'];
+
+    $stmt_curr_user = $pdo->prepare(
+        "SELECT username, profile_image_url 
+         FROM users 
+         WHERE id = :id"
+    );
+    $stmt_curr_user->execute(['id' => $current_user_id]);
+    $current_user_data = $stmt_curr_user->fetch(PDO::FETCH_ASSOC);
+
+    if ($current_user_data &&
+        !empty($current_user_data['profile_image_url']) &&
+        file_exists($current_user_data['profile_image_url'])) {
+        $current_user_profile_image = $current_user_data['profile_image_url'];
+    }
+}
+/* ==== نهاية التحقق ==== */
+
+/* 1) جلب بيانات الفيديو الحالي */
+$stmt_video = $pdo->prepare("SELECT * FROM videos WHERE id = ?");
+$stmt_video->execute([$id]);
+$video = $stmt_video->fetch(PDO::FETCH_ASSOC);
 
 if (!$video) {
-    // Try to redirect to a generic index or error page if video not found
     header('Location: index.php?error=video_not_found');
     exit;
 }
+$video_id = $video['id'];
 
-$video_id = $video['id']; // Use the fetched ID to be sure
-
-// 2) If Vimeo video, adjust URL
+/* 2) تهيئة رابط Vimeo إن وُجد */
 if ($video['is_vimeo'] && strpos($video['video_url'], 'player.vimeo.com') === false) {
-    preg_match('/vimeo\.com\/(\d+)/', $video['video_url'], $match);
-    if (isset($match[1])) {
-        $video['video_url'] = "https://player.vimeo.com/video/" . $match[1];
+    if (preg_match('/vimeo\.com\/(\d+)/', $video['video_url'], $m)) {
+        $video['video_url'] = "https://player.vimeo.com/video/" . $m[1];
     }
 }
 
-// 3) Fetch number of likes
+/* 3) عدد اللايكات */
 $stmt_likes = $pdo->prepare("SELECT COUNT(*) AS total FROM likes WHERE video_id = ?");
 $stmt_likes->execute([$video_id]);
-$likes = $stmt_likes->fetch(PDO::FETCH_ASSOC)['total'];
+$likes = (int)$stmt_likes->fetch(PDO::FETCH_ASSOC)['total'];
 
-// 4) Increment views counter (Consider doing this more robustly, e.g., per session)
+/* 4) زيادة العَـدّاد الخاص بالمشاهدات */
 $stmt_views = $pdo->prepare("UPDATE videos SET views = views + 1 WHERE id = ?");
 $stmt_views->execute([$video_id]);
 
-// 5) Fetch recommended videos (e.g., 4 random videos from the same category, excluding the current one)
+/* 5) جلب فيديوهات مقترحة */
 $current_category = $video['category'] ?? '';
 if ($current_category) {
-    $stmt_rec = $pdo->prepare("SELECT id, title, views, duration, thumb_url, category FROM videos WHERE id != :current_id AND category = :category ORDER BY RAND() LIMIT 4");
-    $stmt_rec->execute(['current_id' => $video_id, 'category' => $current_category]);
-} else { // Fallback if no category or to fetch any video
-    $stmt_rec = $pdo->prepare("SELECT id, title, views, duration, thumb_url, category FROM videos WHERE id != :current_id ORDER BY RAND() LIMIT 4");
+    $stmt_rec = $pdo->prepare(
+        "SELECT id, title, views, duration, thumb_url, category
+         FROM videos
+         WHERE id != :current_id AND category = :category
+         ORDER BY RAND() LIMIT 4"
+    );
+    $stmt_rec->execute([
+        'current_id' => $video_id,
+        'category'   => $current_category
+    ]);
+} else {
+    $stmt_rec = $pdo->prepare(
+        "SELECT id, title, views, duration, thumb_url, category
+         FROM videos
+         WHERE id != :current_id
+         ORDER BY RAND() LIMIT 4"
+    );
     $stmt_rec->execute(['current_id' => $video_id]);
 }
 $recommended_videos_data = $stmt_rec->fetchAll(PDO::FETCH_ASSOC);
 
-// If no category-specific recommendations found, try fetching any 4 random videos
+/* لو ما طلعت أي توصيات، جرِّب fallback عام */
 if (empty($recommended_videos_data)) {
-    $stmt_rec_fallback = $pdo->prepare("SELECT id, title, views, duration, thumb_url, category FROM videos WHERE id != :current_id ORDER BY RAND() LIMIT 4");
-    $stmt_rec_fallback->execute(['current_id' => $video_id]);
-    $recommended_videos_data = $stmt_rec_fallback->fetchAll(PDO::FETCH_ASSOC);
+    $stmt_rec_fb = $pdo->prepare(
+        "SELECT id, title, views, duration, thumb_url, category
+         FROM videos
+         WHERE id != :current_id
+         ORDER BY RAND() LIMIT 4"
+    );
+    $stmt_rec_fb->execute(['current_id' => $video_id]);
+    $recommended_videos_data = $stmt_rec_fb->fetchAll(PDO::FETCH_ASSOC);
 }
 
+/* 6) جلب التعليقات */
+$stmt_comments = $pdo->prepare(
+    "SELECT c.*, u.username, u.profile_image_url AS user_profile_image
+     FROM comments c
+     JOIN users u ON c.user_id = u.id
+     WHERE c.video_id = :video_id
+     ORDER BY c.created_at DESC"
+);
+$stmt_comments->execute(['video_id' => $video_id]);
+$comments_data = $stmt_comments->fetchAll(PDO::FETCH_ASSOC);
+
+/* --- جاهز لدمجه مع HTML العرض الخاص بيك --- */
 ?>
 
 <!DOCTYPE html>
@@ -609,19 +663,171 @@ if (empty($recommended_videos_data)) {
             .recommended-title { font-size: 0.9rem; }
             .fuden-notification { width: 90%; padding: 0.8rem 1rem; font-size: 0.85rem; top: 80px; }
         }
+          .comments-section {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 1.5rem;
+            background: var(--card-background);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            border: 1px solid var(--border-light);
+        }
+
+        .comments-section h3 {
+            font-size: clamp(1.3rem, 4vw, 1.6rem);
+            margin-bottom: 1.5rem;
+            color: var(--text-light);
+            border-bottom: 1px solid var(--border-light);
+            padding-bottom: 0.75rem;
+        }
+
+        .comment-form {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+            align-items: flex-start;
+        }
+
+        .comment-form .user-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 1px solid var(--border-light);
+        }
+
+        .comment-form .form-content {
+            flex-grow: 1;
+        }
+
+        .comment-form textarea {
+            width: 100%;
+            min-height: 80px;
+            padding: 0.75rem;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: var(--text-light);
+            font-family: inherit;
+            font-size: 0.95rem;
+            resize: vertical;
+            margin-bottom: 0.75rem;
+        }
+         .comment-form textarea:focus {
+            outline: none;
+            background: rgba(255, 255, 255, 0.15);
+            border-color: var(--primary-color-2);
+            box-shadow: 0 0 10px rgba(78, 205, 196, 0.2);
+        }
+
+
+        .comment-form button[type="submit"] {
+            background: linear-gradient(45deg, var(--primary-color-1), var(--primary-color-2));
+            color: var(--text-light);
+            padding: 0.6rem 1.5rem;
+            border: none;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            float: left; /* لجعله على اليسار في RTL */
+        }
+        html[dir="ltr"] .comment-form button[type="submit"] {
+             float: right;
+        }
+
+        .comment-form button[type="submit"]:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 10px rgba(255, 107, 107, 0.3);
+        }
+        .login-to-comment {
+            text-align: center;
+            padding: 1rem;
+            background: rgba(255,255,255,0.05);
+            border-radius: 8px;
+            margin-bottom: 1.5rem;
+        }
+        .login-to-comment a {
+            color: var(--primary-color-2);
+            text-decoration: none;
+            font-weight: bold;
+        }
+        .login-to-comment a:hover {
+            text-decoration: underline;
+        }
+
+
+        .comments-list .comment-item {
+            display: flex;
+            gap: 1rem;
+            padding: 1rem 0;
+            border-bottom: 1px solid var(--border-light);
+        }
+        .comments-list .comment-item:last-child {
+            border-bottom: none;
+        }
+
+        .comment-item .user-avatar {
+            width: 45px;
+            height: 45px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 1px solid var(--border-light);
+        }
+
+        .comment-item .comment-content {
+            flex-grow: 1;
+        }
+
+        .comment-item .comment-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.3rem;
+            flex-wrap: wrap;
+        }
+
+        .comment-item .comment-user {
+            font-weight: bold;
+            color: var(--primary-color-2);
+            font-size: 0.95rem;
+        }
+
+        .comment-item .comment-date {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .comment-item .comment-text {
+            font-size: 0.9rem;
+            line-height: 1.6;
+            color: rgba(255, 255, 255, 0.95);
+            white-space: pre-wrap; /* للحفاظ على فواصل الأسطر */
+            word-break: break-word;
+        }
+        .no-comments {
+            text-align: center;
+            color: var(--text-muted);
+            padding: 1rem 0;
+        }
+
+        /* تعديل بسيط لـ .video-actions إذا كانت التعليقات ستكون قريبة جداً */
+        .video-actions {
+            margin-bottom: 2rem; /* إضافة مسافة قبل قسم التعليقات */
+        }
+
    </style>
 </head>
-<body>
-    <header class="header">
+<body dir="ltr"> <header class="header">
         <nav class="nav">
             <div class="logo" onclick="goHome()">FUDEN</div>
             <div class="nav-controls">
-                <a href="#" class="nav-button back-button" onclick="event.preventDefault(); goBack();" aria-label="Go Back">
-                    <span>&larr;</span>
-                    <span>Back</span>
+                <a href="#" class="nav-button back-button" onclick="event.preventDefault(); goBack();" aria-label="العودة للخلف">
+                    <span>&larr;</span> <span>رجوع</span>
                 </a>
-                <button class="nav-button" id="navFullscreenBtn" aria-label="Toggle Fullscreen">Fullscreen</button>
-                <button class="nav-button" id="navShareBtn" aria-label="Share Video">Share</button>
+                <button class="nav-button" id="navFullscreenBtn" aria-label="ملء الشاشة">ملء الشاشة</button>
+                <button class="nav-button" id="navShareBtn" aria-label="مشاركة الفيديو">مشاركة</button>
             </div>
         </nav>
     </header>
@@ -639,9 +845,9 @@ if (empty($recommended_videos_data)) {
                     <div class="video-container">
                         <video id="localVideo" class="video-element" preload="metadata" poster="<?= htmlspecialchars($video['thumb_url'] ?? '') ?>" style="width:100%;">
                             <source src="<?= htmlspecialchars($video['video_url']) ?>" type="video/mp4">
-                            Your browser does not support the video tag. 🙁
+                            متصفحك لا يدعم وسم الفيديو. 🙁
                         </video>
-                        <button class="video-play-button-overlay" id="videoPlayButtonOverlay" aria-label="Play Video">
+                        <button class="video-play-button-overlay" id="videoPlayButtonOverlay" aria-label="تشغيل الفيديو">
                             <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
                         </button>
                     </div>
@@ -650,35 +856,31 @@ if (empty($recommended_videos_data)) {
                             <div class="progress-fill" id="progressFill"></div>
                             <div class="progress-handle" id="progressHandle"></div>
                         </div>
-                        
                         <div class="control-buttons">
                             <div class="control-left">
-                                <button class="control-btn" id="playPauseBtn" aria-label="Play/Pause">▶️</button>
-                                <button class="control-btn" id="skipBackwardBtn" aria-label="Skip Backward 10 seconds">⏪</button>
-                                <button class="control-btn" id="skipForwardBtn" aria-label="Skip Forward 10 seconds">⏩</button>
+                                <button class="control-btn" id="playPauseBtn" aria-label="تشغيل/إيقاف مؤقت">▶️</button>
+                                <button class="control-btn" id="skipBackwardBtn" aria-label="رجوع 10 ثواني">⏪</button>
+                                <button class="control-btn" id="skipForwardBtn" aria-label="تقديم 10 ثواني">⏩</button>
                                 <div class="time-display" id="timeDisplay">00:00 / 00:00</div>
                             </div>
-                            
                             <div class="control-right">
                                 <div class="volume-control">
-                                    <button class="control-btn" id="muteBtn" aria-label="Mute/Unmute">🔊</button>
+                                    <button class="control-btn" id="muteBtn" aria-label="كتم/إلغاء كتم الصوت">🔊</button>
                                     <div class="volume-slider" id="volumeSlider">
                                         <div class="volume-fill" id="volumeFill"></div>
                                         <div class="volume-handle" id="volumeHandle"></div>
                                     </div>
                                 </div>
-                                
                                 <div class="quality-selector">
-                                    <button class="quality-button" id="qualityBtn" aria-label="Select Quality">Auto</button>
+                                    <button class="quality-button" id="qualityBtn" aria-label="اختيار الجودة">تلقائي</button>
                                     <div class="quality-dropdown" id="qualityDropdown">
                                         <div class="quality-option" data-quality="1080p">1080p</div>
                                         <div class="quality-option" data-quality="720p">720p</div>
                                         <div class="quality-option" data-quality="480p">480p</div>
-                                        <div class="quality-option active" data-quality="Auto">Auto</div>
+                                        <div class="quality-option active" data-quality="Auto">تلقائي</div>
                                     </div>
                                 </div>
-                                
-                                <button class="control-btn" id="fullscreenBtn" aria-label="Toggle Fullscreen">⛶</button>
+                                <button class="control-btn" id="fullscreenBtn" aria-label="تبديل ملء الشاشة">⛶</button>
                             </div>
                         </div>
                     </div>
@@ -690,7 +892,7 @@ if (empty($recommended_videos_data)) {
             <h1 class="video-title"><?= htmlspecialchars($video['title']) ?></h1>
 
             <div class="video-meta">
-                <div class="meta-item">👁️ <?= number_format($video['views']) ?> views</div>
+                <div class="meta-item">👁️ <?= number_format($video['views']) ?> مشاهدات</div>
                 <div class="meta-item">📅 <?= date('Y-m-d', strtotime($video['created_at'])) ?></div>
                 <?php if(!empty($video['duration'])): ?>
                     <div class="meta-item">⏱️ <?= htmlspecialchars($video['duration']) ?></div>
@@ -706,16 +908,52 @@ if (empty($recommended_videos_data)) {
 
             <div class="video-actions">
                <button class="action-button" id="like-btn" data-video-id="<?= $video_id ?>">
-                   <span id="like-icon">👍</span> <span id="like-text">Like</span> <span id="like-count" style="margin-left: 5px;"><?= $likes ?></span>
-               </button>
-                <button class="action-button" id="addToWatchlistBtn">➕ Add to Watchlist</button>
-                <button class="action-button" id="downloadBtn">⬇️ Download</button>
-                <button class="action-button" id="reportBtn">⚠️ Report</button>
+                   <span id="like-icon">👍</span> <span id="like-text">إعجاب</span> <span id="like-count" style="margin-left: 5px; margin-right: 5px;"><?= $likes ?></span> </button>
+                <button class="action-button" id="addToWatchlistBtn">➕ إضافة للمشاهدة لاحقاً</button>
+                <button class="action-button" id="downloadBtn">⬇️ تحميل</button>
+                <button class="action-button" id="reportBtn">⚠️ إبلاغ</button>
             </div>
         </section>
 
+        <section class="comments-section" id="comments-section">
+            <h3>التعليقات (<span id="commentCount"><?= count($comments_data) // This will now correctly output 0 if $comments_data is empty ?></span>)</h3>
+
+            <?php if ($is_logged_in): // This will now evaluate based on the $is_logged_in variable ?>
+                <form action="add_comment.php" method="POST" class="comment-form">
+                    <img src="<?= htmlspecialchars($current_user_profile_image) // This will now use the defined variable ?>" alt="صورتك" class="user-avatar">
+                    <div class="form-content">
+                        <textarea name="comment_text" placeholder="أضف تعليقاً عاماً..." required></textarea>
+                        <input type="hidden" name="video_id" value="<?= $video_id ?>">
+                        <input type="hidden" name="parent_comment_id" value=""> <button type="submit">تعليق</button>
+                    </div>
+                </form>
+            <?php else: ?>
+                <div class="login-to-comment">
+                    <p><a href="login.php?redirect=watch.php?id=<?= $video_id ?>">سجّل الدخول</a> أو <a href="register.php?redirect=watch.php?id=<?= $video_id ?>">أنشئ حساباً</a> لإضافة تعليق.</p>
+                </div>
+            <?php endif; ?>
+
+            <div class="comments-list">
+                <?php if (empty($comments_data)): // This will now correctly check the $comments_data array ?>
+                    <p class="no-comments">لا توجد تعليقات حتى الآن. كن أول من يعلّق!</p>
+                <?php else: ?>
+                    <?php foreach ($comments_data as $comment): // This will now iterate over $comments_data (empty or filled) ?>
+                        <div class="comment-item">
+                            <img src="<?= htmlspecialchars(!empty($comment['user_profile_image']) && file_exists($comment['user_profile_image']) ? $comment['user_profile_image'] : 'images/default_avatar.png') ?>" alt="<?= htmlspecialchars($comment['username'] ?? 'User') ?>" class="user-avatar">
+                            <div class="comment-content">
+                                <div class="comment-header">
+                                    <span class="comment-user"><?= htmlspecialchars($comment['username'] ?? 'Anonymous') ?></span>
+                                    <span class="comment-date"><?= isset($comment['created_at']) ? date('M j, Y \a\t g:i a', strtotime($comment['created_at'])) : 'N/A' ?></span>
+                                </div>
+                                <p class="comment-text"><?= nl2br(htmlspecialchars($comment['comment_text'] ?? '')) ?></p>
+                                </div>
+                        </div>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+            </div>
+        </section>
         <section class="recommended-section">
-            <h2 class="section-title">Recommended For You</h2>
+            <h2 class="section-title">مقاطع فيديو مقترحة لك</h2>
             <div class="recommended-grid" id="recommendedGrid">
                 </div>
         </section>
@@ -1174,6 +1412,8 @@ function changeQuality(quality, element) {
     if(element) element.classList.add('active');
     qualityDropdown.style.display = 'none'; 
     showNotification(`Quality set to: ${quality}`);
+    // In a real scenario, you would add logic here to change the video source if 'localVideoSrc'
+    // is an object with different quality URLs, or fetch a new manifest for HLS/DASH.
     showControlsAndResetTimeout(); 
 }
 
@@ -1364,6 +1604,7 @@ document.addEventListener('visibilitychange', () => {
     if (video && !video.paused && document.hidden) video.pause();
 });
 
+// Removed redundant escapeHTML function, htmlspecialchars (JS version) is kept.
 </script>
 </body>
 </html>
