@@ -248,7 +248,7 @@ if (empty($recommended_videos_data)) {
         }
 
         .video-player:hover .custom-controls,
-        .video-player.controls-visible .custom-controls {
+        .video-player.controls-visible .custom-controls { /* Use class to control visibility */
             opacity: 1;
             visibility: visible;
         }
@@ -424,6 +424,7 @@ if (empty($recommended_videos_data)) {
             transform: translateY(-2px);
             box-shadow: 0 5px 15px rgba(255, 107, 107, 0.4);
         }
+        
 
         /* Recommended Videos */
         .recommended-section { max-width: 1200px; margin: 2rem auto; }
@@ -734,69 +735,70 @@ document.addEventListener('DOMContentLoaded', () => {
   const likeIconSpan = document.getElementById('like-icon');
 
   function updateLikeButtonVisuals(liked, count) {
-      likeCountSpan.innerText = count;
-      if (liked) {
-          likeBtn.classList.add('liked');
-          likeIconSpan.textContent = '❤️';
-      } else {
-          likeBtn.classList.remove('liked');
-          likeIconSpan.textContent = '👍';
+      if (likeCountSpan) likeCountSpan.innerText = count;
+      if (likeBtn && likeIconSpan) {
+          if (liked) {
+              likeBtn.classList.add('liked');
+              likeIconSpan.textContent = '❤️';
+          } else {
+              likeBtn.classList.remove('liked');
+              likeIconSpan.textContent = '👍';
+          }
       }
   }
   
   const initialLikeStatus = localStorage.getItem('liked_video_' + currentVideoId) === 'true';
-  if (initialLikeStatus) {
-      updateLikeButtonVisuals(true, parseInt(likeCountSpan.innerText)); 
-  }
+  let initialServerLikes = parseInt(likeCountSpan?.innerText || '0');
+  updateLikeButtonVisuals(initialLikeStatus, initialServerLikes); 
 
-  likeBtn.addEventListener('click', () => {
-    const videoId = likeBtn.dataset.videoId;
-    const isCurrentlyLiked = likeBtn.classList.contains('liked');
-    let currentLikes = parseInt(likeCountSpan.innerText);
+  if (likeBtn) {
+    likeBtn.addEventListener('click', () => {
+        const videoId = likeBtn.dataset.videoId;
+        const isCurrentlyLikedClient = localStorage.getItem('liked_video_' + videoId) === 'true'; 
+        let currentClientLikes = parseInt(likeCountSpan.innerText); 
 
-    updateLikeButtonVisuals(!isCurrentlyLiked, isCurrentlyLiked ? currentLikes - 1 : currentLikes + 1);
-    if (!isCurrentlyLiked) {
-        localStorage.setItem('liked_video_' + videoId, 'true');
-    } else {
-        localStorage.removeItem('liked_video_' + videoId);
-    }
+        const newOptimisticLikedState = !isCurrentlyLikedClient;
+        const newOptimisticLikes = newOptimisticLikedState ? currentClientLikes + 1 : (currentClientLikes > 0 ? currentClientLikes - 1 : 0) ;
+        
+        updateLikeButtonVisuals(newOptimisticLikedState, newOptimisticLikes);
 
-    fetch('like.php', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
-      body: 'video_id=' + encodeURIComponent(videoId) + '&action=' + (isCurrentlyLiked ? 'unlike' : 'like')
-    })
-    .then(res => {
-        if (!res.ok) { throw new Error('Network response was not ok: ' + res.statusText); }
-        return res.json();
-    })
-    .then(data => {
-      if (data.success) {
-          updateLikeButtonVisuals(data.status === 'liked', data.likes);
-          if (data.status === 'liked') {
-              localStorage.setItem('liked_video_' + videoId, 'true');
-          } else {
-              localStorage.removeItem('liked_video_' + videoId);
-          }
-      } else {
-          updateLikeButtonVisuals(isCurrentlyLiked, currentLikes); 
-          if(isCurrentlyLiked) localStorage.setItem('liked_video_' + videoId, 'true'); else localStorage.removeItem('liked_video_' + videoId);
-          showNotification(data.message || 'Action failed.');
-      }
-    })
-    .catch(err => {
-        console.error("Fetch error:", err);
-        showNotification('Error connecting to the server.');
-        updateLikeButtonVisuals(isCurrentlyLiked, currentLikes);
-        if(isCurrentlyLiked) localStorage.setItem('liked_video_' + videoId, 'true'); else localStorage.removeItem('liked_video_' + videoId);
+        fetch('like.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+        body: 'video_id=' + encodeURIComponent(videoId) + '&action=' + (newOptimisticLikedState ? 'like' : 'unlike')
+        })
+        .then(res => {
+            if (!res.ok) { throw new Error('Network response was not ok: ' + res.statusText + ' status: ' + res.status); }
+            return res.json();
+        })
+        .then(data => {
+            if (data && typeof data.likes !== 'undefined') {
+                const serverLikes = parseInt(data.likes);
+                if (newOptimisticLikedState) { 
+                    localStorage.setItem('liked_video_' + videoId, 'true');
+                    updateLikeButtonVisuals(true, serverLikes);
+                } else { 
+                    localStorage.removeItem('liked_video_' + videoId);
+                    updateLikeButtonVisuals(false, serverLikes);
+                }
+            } else {
+                console.error("Like/Unlike failed: Response missing 'likes' field or invalid data.", data);
+                showNotification('Action failed: Invalid server response.');
+                updateLikeButtonVisuals(isCurrentlyLikedClient, currentClientLikes); 
+            }
+        })
+        .catch(err => {
+            console.error("Fetch error for like/unlike:", err);
+            showNotification('Error connecting to the server for like action.');
+            updateLikeButtonVisuals(isCurrentlyLikedClient, currentClientLikes);
+        });
     });
-  });
+  }
 
   document.getElementById('addToWatchlistBtn')?.addEventListener('click', () => showNotification('Added to Watchlist!'));
   document.getElementById('downloadBtn')?.addEventListener('click', downloadVideo);
   document.getElementById('reportBtn')?.addEventListener('click', () => showNotification('Video reported. Thank you.'));
   
-  // Nav buttons
   document.getElementById('navFullscreenBtn')?.addEventListener('click', toggleFullscreen);
   document.getElementById('navShareBtn')?.addEventListener('click', shareVideo);
 
@@ -819,15 +821,25 @@ let volumeHandle = null;
 let qualityBtn = null;
 let qualityDropdown = null;
 let bigPlayButton = null;
-let fullscreenVideoBtn = null; // Renamed to avoid conflict with nav
+let fullscreenVideoBtn = null; 
 
 let controlsTimeout;
+let lastToggleTime = 0; // For debouncing toggleControlsVisibility
+const toggleDebounce = 100; // Milliseconds for debounce
+
+// Variables for tap detection
+let touchstartX = 0;
+let touchstartY = 0;
+let touchstartTime = 0;
+const tapThreshold = 10; // Max pixels moved to be considered a tap
+const tapTimeThreshold = 300; // Max ms to be considered a tap (increased slightly)
+
 
 document.addEventListener('DOMContentLoaded', function() {
     video = document.getElementById('localVideo');
     videoPlayer = document.getElementById('videoPlayer');
     
-    if (video) { 
+    if (video && videoPlayer) { 
         customControls = document.getElementById('customControls');
         playPauseBtn = document.getElementById('playPauseBtn');
         progressBar = document.getElementById('progressBar');
@@ -841,14 +853,14 @@ document.addEventListener('DOMContentLoaded', function() {
         qualityBtn = document.getElementById('qualityBtn');
         qualityDropdown = document.getElementById('qualityDropdown');
         bigPlayButton = document.getElementById('videoPlayButtonOverlay');
-        fullscreenVideoBtn = document.getElementById('fullscreenBtn'); // Specific to video controls
+        fullscreenVideoBtn = document.getElementById('fullscreenBtn'); 
 
         document.getElementById('skipBackwardBtn')?.addEventListener('click', skipBackward);
         document.getElementById('skipForwardBtn')?.addEventListener('click', skipForward);
         playPauseBtn?.addEventListener('click', togglePlay);
         muteBtn?.addEventListener('click', toggleMute);
         qualityBtn?.addEventListener('click', toggleQualityDropdown);
-        fullscreenVideoBtn?.addEventListener('click', toggleFullscreen);
+        fullscreenVideoBtn?.addEventListener('click', toggleFullscreen); 
         bigPlayButton?.addEventListener('click', togglePlay);
 
         document.querySelectorAll('.quality-option').forEach(option => {
@@ -857,11 +869,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
         setupVideoEventListeners();
         setupCustomControlsInteraction();
-        video.removeAttribute('controls');
+        video.removeAttribute('controls'); 
         updateVolumeDisplay();
-        if (customControls && bigPlayButton) { // Check if controls exist before manipulating
+        if (customControls) { 
             showControls(); 
-            hideControlsWithDelay(5000);
+            if (!video.paused) { 
+                hideControlsWithDelay(5000);
+            }
         }
     }
     
@@ -869,7 +883,7 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 function setupVideoEventListeners() {
-    if (!video) return;
+    if (!video || !videoPlayer) return; 
     video.addEventListener('loadedmetadata', () => {
         updateTimeDisplay();
         updateVolumeDisplay();
@@ -891,7 +905,7 @@ function setupVideoEventListeners() {
         if(playPauseBtn) playPauseBtn.setAttribute('aria-label', 'Play');
         if (bigPlayButton) bigPlayButton.style.display = 'flex';
         if(videoPlayer) videoPlayer.classList.remove('playing');
-        showControls();
+        showControls(); 
     });
     video.addEventListener('volumechange', updateVolumeDisplay);
     video.addEventListener('ended', () => {
@@ -908,14 +922,45 @@ function setupVideoEventListeners() {
         showControls();
     });
 
-    videoPlayer?.addEventListener('mouseenter', showControlsAndResetTimeout);
-    videoPlayer?.addEventListener('mousemove', showControlsAndResetTimeout);
-    videoPlayer?.addEventListener('mouseleave', () => { if(video && !video.paused) hideControlsWithDelay(); });
+    videoPlayer.addEventListener('mouseenter', showControlsAndResetTimeout);
+    videoPlayer.addEventListener('mousemove', showControlsAndResetTimeout);
+    videoPlayer.addEventListener('mouseleave', () => { if(video && !video.paused) hideControlsWithDelay(); });
+    
+    // Click on video itself to toggle controls (for mouse)
     video.addEventListener('click', (e) => {
         if (e.target === video) { 
              toggleControlsVisibility();
         }
     });
+
+    // Touch events for tap detection on video element
+    video.addEventListener('touchstart', function(e) {
+        if (e.target === video) {
+            touchstartX = e.changedTouches[0].screenX;
+            touchstartY = e.changedTouches[0].screenY;
+            touchstartTime = new Date().getTime();
+        }
+    }, { passive: true });
+
+    video.addEventListener('touchend', function(e) {
+        if (e.target === video) {
+            const touchendX = e.changedTouches[0].screenX;
+            const touchendY = e.changedTouches[0].screenY;
+            const touchendTime = new Date().getTime();
+
+            const deltaX = Math.abs(touchstartX - touchendX);
+            const deltaY = Math.abs(touchstartY - touchendY);
+            const deltaTime = touchendTime - touchstartTime;
+
+            if (deltaX < tapThreshold && deltaY < tapThreshold && deltaTime < tapTimeThreshold) {
+                // It's a tap!
+                e.preventDefault(); // Prevent click if it's a tap, to avoid double toggle
+                toggleControlsVisibility();
+            }
+        }
+    }, { passive: false });
+
+
     customControls?.addEventListener('click', (e) => {
         e.stopPropagation(); 
         showControlsAndResetTimeout(); 
@@ -923,14 +968,31 @@ function setupVideoEventListeners() {
 }
 
 function toggleControlsVisibility() {
-    if (!customControls || !video) return;
-    const isVisible = customControls.style.opacity === '1';
+    const now = new Date().getTime();
+    if (now - lastToggleTime < toggleDebounce) {
+        return; // Debounce rapid calls
+    }
+    lastToggleTime = now;
+
+    if (!customControls || !video || !videoPlayer) return;
+    const isVisible = videoPlayer.classList.contains('controls-visible');
+
     if (isVisible) {
-        if (!video.paused && (!qualityDropdown || qualityDropdown.style.display !== 'block')) {
-             hideControls();
+        if (qualityDropdown && qualityDropdown.style.display === 'block') {
+            return; 
         }
+        customControls.style.opacity = '0';
+        customControls.style.visibility = 'hidden';
+        videoPlayer.classList.remove('controls-visible');
+        videoPlayer.style.cursor = 'none';
     } else {
-        showControlsAndResetTimeout();
+        customControls.style.opacity = '1';
+        customControls.style.visibility = 'visible';
+        videoPlayer.classList.add('controls-visible');
+        videoPlayer.style.cursor = 'default';
+        if (!video.paused) { 
+            hideControlsWithDelay();
+        }
     }
 }
 
@@ -942,25 +1004,32 @@ function showControls() {
     videoPlayer.style.cursor = 'default';
 }
 
-function hideControls() {
-    if (!customControls || !video || video.paused || (qualityDropdown && qualityDropdown.style.display === 'block')) return;
+function hideControls() { 
+    if (!customControls || !video || !videoPlayer) return;
+    if (video.paused || (qualityDropdown && qualityDropdown.style.display === 'block')) {
+        return;
+    }
     customControls.style.opacity = '0';
     customControls.style.visibility = 'hidden';
-    videoPlayer?.classList.remove('controls-visible');
+    videoPlayer.classList.remove('controls-visible');
     videoPlayer.style.cursor = 'none';
 }
 
 function showControlsAndResetTimeout() {
-    if (!video) return;
-    showControls();
+    if (!video || !videoPlayer || !customControls) return;
+    showControls(); 
     clearTimeout(controlsTimeout);
-    if(!video.paused) {
+    if(!video.paused) { 
          hideControlsWithDelay();
     }
 }
 
 function hideControlsWithDelay(delay = 3000) {
-   if (!video || video.paused || (qualityDropdown && qualityDropdown.style.display === 'block')) return;
+   if (!video || !videoPlayer || !customControls ) return; 
+   if (video.paused || (qualityDropdown && qualityDropdown.style.display === 'block')) {
+       clearTimeout(controlsTimeout); 
+       return;
+   }
    clearTimeout(controlsTimeout);
    controlsTimeout = setTimeout(hideControls, delay);
 }
@@ -1001,11 +1070,11 @@ function makeSliderDraggable(sliderElement, handleElement, callback) {
         
         const percentage = getPercentage(event);
         callback(percentage);
-        if (event.cancelable && event.type !== 'touchstart') event.preventDefault(); // Prevent default for mouse, but allow touch scroll to start if needed then override in onMove
+        if (event.cancelable && event.type !== 'touchstart') event.preventDefault();
     }
     function onMove(event) {
         if (!isDragging) return;
-        if (event.cancelable) event.preventDefault(); // Prevent page scroll while dragging
+        if (event.cancelable) event.preventDefault(); 
         const percentage = getPercentage(event);
         callback(percentage);
     }
@@ -1017,10 +1086,10 @@ function makeSliderDraggable(sliderElement, handleElement, callback) {
         document.removeEventListener('mouseup', onEnd);
         document.removeEventListener('touchmove', onMove);
         document.removeEventListener('touchend', onEnd);
-        showControlsAndResetTimeout();
+        showControlsAndResetTimeout(); 
     }
     sliderElement.addEventListener('mousedown', onStart);
-    sliderElement.addEventListener('touchstart', onStart, { passive: true }); // Make touchstart passive initially
+    sliderElement.addEventListener('touchstart', onStart, { passive: true }); 
 }
 
 function togglePlay() {
@@ -1087,10 +1156,15 @@ function formatTime(seconds) {
 }
 
 function toggleQualityDropdown() {
-    if (!qualityDropdown) return;
+    if (!qualityDropdown || !qualityBtn) return; 
     const isOpen = qualityDropdown.style.display === 'block';
     qualityDropdown.style.display = isOpen ? 'none' : 'block';
-    if (!isOpen) clearTimeout(controlsTimeout); else showControlsAndResetTimeout();
+    if (isOpen) { 
+        showControlsAndResetTimeout(); 
+    } else { 
+        clearTimeout(controlsTimeout); 
+        showControls(); 
+    }
 }
 
 function changeQuality(quality, element) {
@@ -1098,16 +1172,18 @@ function changeQuality(quality, element) {
     qualityBtn.textContent = quality;
     document.querySelectorAll('.quality-option.active').forEach(el => el.classList.remove('active'));
     if(element) element.classList.add('active');
-    qualityDropdown.style.display = 'none';
+    qualityDropdown.style.display = 'none'; 
     showNotification(`Quality set to: ${quality}`);
-    showControlsAndResetTimeout();
+    showControlsAndResetTimeout(); 
 }
 
 async function toggleFullscreen() {
-    if (!videoPlayer) return;
+    const targetElement = videoPlayer; 
+    if (!targetElement) return;
+
     if (!document.fullscreenElement) {
         try {
-            await videoPlayer.requestFullscreen();
+            await targetElement.requestFullscreen();
             if (screen.orientation && typeof screen.orientation.lock === 'function') {
                 try {
                     await screen.orientation.lock('landscape-primary');
@@ -1122,7 +1198,6 @@ async function toggleFullscreen() {
     } else {
         try {
             await document.exitFullscreen();
-            // Unlocking is generally handled by the fullscreenchange event or by the browser automatically
         } catch (err) {
             console.error(`Error exiting fullscreen: ${err.message}`);
         }
@@ -1130,9 +1205,10 @@ async function toggleFullscreen() {
 }
 
 document.addEventListener('fullscreenchange', () => {
-    if (!videoPlayer) return;
+    const targetElement = videoPlayer; 
+    if (!targetElement) return;
     const isFullscreen = !!document.fullscreenElement;
-    videoPlayer.classList.toggle('fullscreen-active', isFullscreen);
+    targetElement.classList.toggle('fullscreen-active', isFullscreen); 
     if (!isFullscreen) {
         if (screen.orientation && typeof screen.orientation.unlock === 'function') {
             try {
@@ -1177,7 +1253,7 @@ function renderRecommendedVideos() {
 }
 
 function htmlspecialchars(str) { 
-    if (typeof str !== 'string') return String(str); // Ensure it's a string
+    if (typeof str !== 'string') return String(str); 
     return str.replace(/[&<>"']/g, function (match) {
         const S = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
         return S[match];
@@ -1243,33 +1319,44 @@ function showNotification(message) {
 
 document.addEventListener('keydown', (e) => {
     if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA' || document.activeElement.isContentEditable)) return;
-    if (!video && !(videoPlayer?.contains(document.activeElement))) return; 
+    
+    const isVideoRelatedFocus = videoPlayer?.contains(document.activeElement) || document.activeElement === video || document.activeElement === document.body;
+
+    if (!video && !isVideoRelatedFocus && e.code !== 'Escape') return;
+
 
     const keyActionMap = {
         'Space': togglePlay, 'KeyK': togglePlay,
         'ArrowLeft': skipBackward, 'KeyJ': skipBackward,
         'ArrowRight': skipForward, 'KeyL': skipForward,
         'KeyM': toggleMute,
-        'KeyF': toggleFullscreen,
-        'ArrowUp': () => { if (video) { video.volume = Math.min(1, video.volume + 0.1); }},
-        'ArrowDown': () => { if (video) { video.volume = Math.max(0, video.volume - 0.1); }},
+        'KeyF': toggleFullscreen, 
+        'ArrowUp': () => { if (video) { video.volume = Math.min(1, video.volume + 0.1); updateVolumeDisplay(); }}, 
+        'ArrowDown': () => { if (video) { video.volume = Math.max(0, video.volume - 0.1); updateVolumeDisplay(); }}, 
         'Escape': () => {
-            if (document.fullscreenElement) toggleFullscreen(); // Exits fullscreen
+            if (document.fullscreenElement) toggleFullscreen(); 
             if (qualityDropdown && qualityDropdown.style.display === 'block') toggleQualityDropdown();
         }
     };
-    if (keyActionMap[e.code] && video) { // Ensure video exists for these actions
-         e.preventDefault(); 
-         keyActionMap[e.code](); 
-         showControlsAndResetTimeout(); 
-    } else if (e.code === 'Escape' && keyActionMap[e.code]) { // Escape can work even if video isn't the primary focus
-        keyActionMap[e.code]();
+    
+    if (keyActionMap[e.code]) {
+        if (video && (isVideoRelatedFocus || e.code === 'Escape')) { // Allow escape even if video not primary focus
+             e.preventDefault(); 
+             keyActionMap[e.code](); 
+             if (e.code !== 'Escape') { // Don't always show controls on escape if it was for quality dropdown
+                showControlsAndResetTimeout();
+             }
+        } else if (e.code === 'Escape') { // Special handling for escape if video element doesn't exist but dropdown might
+            keyActionMap[e.code]();
+        }
     }
 });
 
 document.addEventListener('click', (e) => { 
-    if (qualityDropdown && !e.target.closest('.quality-selector')) {
-        qualityDropdown.style.display = 'none';
+    if (qualityDropdown && qualityBtn && !qualityBtn.contains(e.target) && !qualityDropdown.contains(e.target)) {
+        if (qualityDropdown.style.display === 'block') {
+            toggleQualityDropdown(); 
+        }
     }
 });
 
