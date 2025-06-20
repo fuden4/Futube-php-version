@@ -1,0 +1,92 @@
+<header class="header">
+    <nav class="nav">
+        <div class="logo">FUDEN</div>
+        
+        <div class="search-bar">
+            <input type="text" id="searchInput" class="search-input" placeholder="ابحث..." autocomplete="off">
+            <div id="searchResults"></div>
+        </div>
+        
+        <button class="hamburger-menu" id="hamburgerMenu"><span></span><span></span><span></span></button>
+
+        <div class="mobile-nav-menu" id="mobileNavMenu">
+            <div class="user-actions">
+                <?php if ($is_logged_in): ?>
+                    <img src="<?= htmlspecialchars($user_profile_image) ?>" alt="ملف شخصي" class="profile-pic-header">
+                    <a href="edit-profile.php">تعديل الملف الشخصي</a>
+                    <a href="my-comments.php">تعليقاتي</a>
+                    <a href="watchlist.php">قائمة المشاهدة</a>
+                    <a href="logout.php">تسجيل الخروج</a>
+                <?php else: ?>
+                    <a href="login.php" class="auth-button">تسجيل الدخول</a>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <div class="user-actions-desktop">
+            <?php if ($is_logged_in): ?>
+                <div class="profile-dropdown-container">
+                    <img src="<?= htmlspecialchars($user_profile_image) ?>" alt="ملف شخصي" id="userMenuTriggerDesktop" class="profile-pic-header-desktop">
+                    <div class="dropdown-menu-desktop" id="userDropdownDesktop">
+                        <a href="edit-profile.php">تعديل الملف الشخصي</a>
+                        <a href="my-comments.php">تعليقاتي</a>
+                        <a href="watchlist.php">قائمة المشاهدة</a>
+                        <div class="dropdown-divider"></div>
+                        <a href="logout.php">تسجيل الخروج</a>
+                    </div>
+                </div>
+            <?php else: ?>
+                <a href="login.php" class="auth-button">تسجيل الدخول</a>
+            <?php endif; ?>
+        </div>
+    </nav>
+</header>
+
+<?php if (!empty($featured_videos)): ?>
+<section class="featured-slider" id="featuredSlider">
+    <div class="slider-track">
+        <?php foreach ($featured_videos as $slide_video): ?>
+            <div class="slide" style="background-image: url('<?= htmlspecialchars($slide_video['thumb_url']) ?>');">
+                <div class="slide-overlay"></div>
+                <div class="slide-content">
+                    <h1 class="slide-title"><?= htmlspecialchars($slide_video['title']) ?></h1>
+                    <p class="slide-description"><?= htmlspecialchars(substr($slide_video['description'], 0, 150)) . '...' ?></p>
+                    <a href="watch.php?id=<?= $slide_video['id'] ?>" class="slide-button">المزيد من المعلومات</a>
+                </div>
+            </div>
+        <?php endforeach; ?>
+    </div>
+    <div class="slider-dots" id="sliderDots"></div>
+</section>
+<?php endif; ?>
+
+
+<section class="section">
+   <div class="category-rows-container">
+        <?php foreach ($categorized_videos as $category_name => $videos_in_category): ?>
+            <div class="category-row">
+                <h3 class="category-title"><?= htmlspecialchars($category_name) ?></h3>
+                <div class="row-content-wrapper">
+                    <button class="scroll-arrow left-arrow">‹</button>
+                    <div class="video-row-scroll">
+                        <div class="video-row-scroll-inner">
+                            <?php foreach ($videos_in_category as $video): ?>
+                                <div class="video-card" onclick="location.href='watch.php?id=<?= $video['id'] ?>'">
+                                    <img src="<?= htmlspecialchars($video['thumb_url']) ?>" alt="">
+                                    <div class="card-title-overlay"><?= htmlspecialchars($video['title']) ?></div>
+                                </div>
+                            <?php endforeach; ?>
+                            <?php foreach ($videos_in_category as $video): ?>
+                                <div class="video-card" onclick="location.href='watch.php?id=<?= $video['id'] ?>'">
+                                    <img src="<?= htmlspecialchars($video['thumb_url']) ?>" alt="">
+                                    <div class="card-title-overlay"><?= htmlspecialchars($video['title']) ?></div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                    <button class="scroll-arrow right-arrow">›</button>
+                </div>
+            </div>
+        <?php endforeach; ?>
+    </div>
+</section>

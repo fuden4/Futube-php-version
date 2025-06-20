@@ -222,13 +222,31 @@
 
   <label for="category">📂 الفئة:</label>
   <select id="category" name="category" required>
-    <option disabled selected>اختر الفئة</option>
-    <option value="movies">🎬 أفلام</option>
-    <option value="series">📺 مسلسلات</option>
-    <option value="documentaries">📚 وثائقيات</option>
-    <option value="anime">🎌 أنمي</option>
-    <option value="live">📡 بث مباشر</option>
+    <option value="" disabled selected>اختر الفئة</option>
+    <option value="أفلام">🎬 أفلام</option>
+    <option value="مسلسلات">📺 مسلسلات</option>
+    <option value="وثائقيات">📚 وثائقيات</option>
+    <option value="أنمي">🎌 أنمي</option>
+    <option value="بث مباشر">📡 بث مباشر</option>
   </select>
+
+  <div style="display: flex; gap: 1rem; justify-content: space-between;">
+    <div style="flex: 1;">
+      <label for="release_year">📅 سنة الإصدار:</label>
+      <input type="number" id="release_year" name="release_year" placeholder="مثال: 2024" min="1900" max="2099">
+    </div>
+    <div style="flex: 1;">
+      <label for="rating">⭐ التقييم:</label>
+      <input type="number" id="rating" name="rating" placeholder="مثال: 8.5" step="0.1" min="0" max="10">
+    </div>
+  </div>
+
+  <div class="form-group" style="display: flex; align-items: center; gap: 10px; margin-bottom: 1rem; background: rgba(255,255,255,0.05); padding: 0.8rem; border-radius: 12px;">
+    <input type="checkbox" id="is_featured" name="is_featured" value="1" style="width: auto; margin: 0;">
+    <label for="is_featured" style="margin-bottom: 0; cursor: pointer; color: #fff;">🌟 تمييز هذا الفيديو (فيديو الأسبوع)؟</label>
+  </div>
+  <label for="duration">⏱️ مدة الفيديو:</label>
+  <input type="text" id="duration" name="duration" placeholder="مثال: 2h 15m" required>
 
   <label>🎥 نوع الفيديو:</label>
   <div class="radio-group">
@@ -260,9 +278,6 @@
     <input type="file" id="thumb" name="thumb" accept="image/*" required>
     <span class="file-input-display">اختر صورة مصغرة</span>
   </div>
-
-  <label for="duration">⏱️ مدة الفيديو:</label>
-  <input type="text" id="duration" name="duration" placeholder="مثال: 2h 15m" required>
 
   <div class="progress-bar" id="progressBar">
     <div class="progress-fill" id="progressFill"></div>

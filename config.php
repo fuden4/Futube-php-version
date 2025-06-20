@@ -1,8 +1,8 @@
 <?php
-$host = 'localhost';
-$db   = 'fuden_stream';
-$user = 'root';
-$pass = '';
+$host = 'sql113.infinityfree.com';
+$db   = 'if0_39161754_fuden_stream';
+$user = 'if0_39161754';
+$pass = '3CJpUfVRgjL';
 $dsn  = "mysql:host=$host;dbname=$db;charset=utf8mb4";
 
 try {

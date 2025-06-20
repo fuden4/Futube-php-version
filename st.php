@@ -366,23 +366,6 @@ $featured_videos = $stmt_featured->fetchAll(PDO::FETCH_ASSOC);
 
         /* Responsive */
         @media (max-width: 768px) {
-
-        /*
- * تعديل هوامش صفوف الأفلام والمسلسلات على شاشة الهاتف
- * لجعلها تبدأ من بداية الشاشة بشكل متناسق
-*/
-.category-title {
-    padding-left: 1rem; /* تقليل المسافة البادئة لعنوان القسم */
-    padding-right: 1rem;
-}
-
-.video-row-scroll .video-card:first-child {
-    margin-left: 1rem; /* تقليل الهامش الأيسر لأول بطاقة في الصف */
-}
-
-.video-row-scroll .video-card:last-child {
-    margin-right: 1rem; /* تقليل الهامش الأيمن لآخر بطاقة ليكون متناسقاً */
-}
             /* .nav-links {
                 /* This rule was problematic as .nav-links is used inside mobile menu too.
                    Hiding specific desktop links is handled by hiding .user-actions-desktop
@@ -1090,37 +1073,13 @@ html[dir="ltr"] .card-title-overlay {
 }
 
 /* 5. تجاوب المحتوى مع الشاشات الصغيرة */
-/* 5. تجاوب المحتوى مع الشاشات الصغيرة */
 @media (max-width: 768px) {
-    /* تقليل ارتفاع السلايدر على الهاتف ليأخذ مساحة أقل من الشاشة */
-    .hero-section {
-        height: 55vh; /* كان 70vh، قمنا بتقليله */
-    }
-
     .hero-slide {
         justify-content: center; /* توسيط المحتوى أفقياً بالكامل في الموبايل */
     }
-
     .hero-content {
-        padding: 1rem 1.5rem; /* تقليل الهوامش الجانبية */
+        padding: 1rem 2rem;
         text-align: center;
-    }
-
-    /* تصغير حجم عنوان الفيلم على الهاتف */
-    .hero-title {
-        font-size: 1.8rem; /* كان 3rem، حجم كبير جداً على الهاتف */
-    }
-
-    /* تصغير حجم الوصف على الهاتف */
-    .hero-description {
-        font-size: 0.9rem; /* كان 1.1rem */
-        line-height: 1.5; /* تحسين تباعد الأسطر */
-    }
-
-    /* تصغير حجم زر "المزيد من المعلومات" */
-    .hero-button {
-        font-size: 0.9rem;
-        padding: 0.6rem 1.5rem;
     }
 }
     </style>
@@ -1318,71 +1277,34 @@ html[dir="ltr"] .card-title-overlay {
     }
 
     /* --- JavaScript لتشغيل سلايد شو الفيديو المميز --- */
-/* --- JavaScript لتشغيل السلايد شو (مع دعم السحب باللمس) --- */
+/* --- JavaScript لتشغيل السلايد شو (بتأثير انزلاق أفقي) --- */
 document.addEventListener('DOMContentLoaded', () => {
     const slidesContainer = document.querySelector('.hero-slideshow-container');
+    // نحصل على عدد الشرائح من عدد العناصر الموجودة
     const slideCount = document.querySelectorAll('.hero-slide').length;
-    const slideInterval = 7000; // 7 ثواني
+    const slideInterval = 7000; // الوقت بالمللي ثانية (7 ثواني)
     let currentIndex = 0;
-    let autoPlayInterval; // متغير لحفظ المؤقت
 
+    // لا نشغل الكود إلا إذا كان هناك أكثر من شريحة
     if (slidesContainer && slideCount > 1) {
         
-        // --- دالة أساسية للانتقال إلى شريحة محددة ---
-        const goToSlide = (slideIndex) => {
-            // للتأكد من أن المؤشر يبقى ضمن النطاق الصحيح
-            if (slideIndex < 0) {
-                slideIndex = slideCount - 1; // اذهب إلى الأخيرة إذا كنت في الأولى وسحبت يميناً
-            } else if (slideIndex >= slideCount) {
-                slideIndex = 0; // اذهب إلى الأولى إذا كنت في الأخيرة وسحبت يساراً
-            }
+        const changeSlide = () => {
+            // ننتقل إلى مؤشر الشريحة التالية
+            // استخدام معامل الباقي (%) يضمن العودة إلى 0 بعد الوصول للنهاية
+            currentIndex = (currentIndex + 1) % slideCount;
 
-            const offset = -slideIndex * 100;
+            // نحسب المسافة التي يجب أن يتحركها الشريط إلى اليسار
+            // في الشريحة الأولى (index 0)، المسافة 0%
+            // في الشريحة الثانية (index 1)، المسافة -100%
+            // وهكذا..
+            const offset = -currentIndex * 100;
+
+            // نطبق الحركة على حاوية الشرائح
             slidesContainer.style.transform = `translateX(${offset}%)`;
-            currentIndex = slideIndex;
         };
 
-        // --- دوال التنقل ---
-        const nextSlide = () => { goToSlide(currentIndex + 1); };
-        const prevSlide = () => { goToSlide(currentIndex - 1); };
-
-        // --- منطق التشغيل التلقائي ---
-        const startAutoPlay = () => {
-            autoPlayInterval = setInterval(nextSlide, slideInterval);
-        };
-        const stopAutoPlay = () => {
-            clearInterval(autoPlayInterval);
-        };
-
-        // --- إضافة ميزة السحب باللمس ---
-        let touchStartX = 0;
-        const swipeThreshold = 50; // أقل مسافة بالبيكسل لاعتبارها حركة سحب
-
-        // عند بداية اللمس
-        slidesContainer.addEventListener('touchstart', (e) => {
-            touchStartX = e.changedTouches[0].screenX;
-            stopAutoPlay(); // إيقاف الحركة التلقائية عند تفاعل المستخدم
-        }, { passive: true });
-
-        // عند نهاية اللمس
-        slidesContainer.addEventListener('touchend', (e) => {
-            const touchEndX = e.changedTouches[0].screenX;
-            const swipeDistance = touchEndX - touchStartX;
-
-            if (swipeDistance < -swipeThreshold) {
-                // تم السحب لليسار
-                nextSlide();
-            } else if (swipeDistance > swipeThreshold) {
-                // تم السحب لليمين
-                prevSlide();
-            }
-            
-            startAutoPlay(); // إعادة تشغيل الحركة التلقائية بعد انتهاء تفاعل المستخدم
-        }, { passive: true });
-
-
-        // --- بدء التشغيل عند تحميل الصفحة ---
-        startAutoPlay();
+        // تكرار دالة الحركة كل فترة زمنية محددة
+        setInterval(changeSlide, slideInterval);
     }
 });
 </script>

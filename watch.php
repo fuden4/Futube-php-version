@@ -53,8 +53,20 @@ $stmt_likes->execute([$video_id]);
 $likes = (int)$stmt_likes->fetch(PDO::FETCH_ASSOC)['total'];
 
 /* 4) زيادة العَـدّاد الخاص بالمشاهدات */
-$stmt_views = $pdo->prepare("UPDATE videos SET views = views + 1 WHERE id = ?");
-$stmt_views->execute([$video_id]);
+//$stmt_views = $pdo->prepare("UPDATE videos SET views = views + 1 WHERE id = ?");
+//$stmt_views->execute([$video_id]);
+// ... بعد كود التحقق من تسجيل الدخول وجلب بيانات الفيديو ...
+
+$is_in_watchlist = false;
+if ($is_logged_in) {
+    $stmt_watchlist = $pdo->prepare("SELECT id FROM watchlist WHERE user_id = ? AND video_id = ?");
+    $stmt_watchlist->execute([$current_user_id, $video_id]);
+    if ($stmt_watchlist->fetch()) {
+        $is_in_watchlist = true;
+    }
+}
+
+/* --- جاهز لدمجه مع HTML العرض الخاص بيك --- */
 
 /* 5) جلب فيديوهات مقترحة */
 $current_category = $video['category'] ?? '';
@@ -112,6 +124,9 @@ $comments_data = $stmt_comments->fetchAll(PDO::FETCH_ASSOC);
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Watching - <?= htmlspecialchars($video['title'] ?? 'Fuden') ?></title>
+    <?php if ($video['is_vimeo']): // الشرط لإضافة السكريبت فقط عند الحاجة ?>
+        <script src="https://player.vimeo.com/api/player.js"></script>
+    <?php endif; ?>
    <style>
         :root {
             --primary-color-1: #ff6b6b;
@@ -817,6 +832,367 @@ $comments_data = $stmt_comments->fetchAll(PDO::FETCH_ASSOC);
             margin-bottom: 2rem; /* إضافة مسافة قبل قسم التعليقات */
         }
 
+      /* ... (الكود السابق بدون تغيير) ... */
+
+        .video-player.fullscreen-active {
+            width: 100% !important;
+            height: 100% !important;
+            max-width: none !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #000; /* خلفية سوداء لأي أشرطة جانبية/علوية */
+            border-radius: 0 !important; /* إزالة الحواف الدائرية في وضع ملء الشاشة */
+            border: none !important; /* إزالة أي حدود في وضع ملء الشاشة */
+        }
+
+        /* للفيديوهات المحلية عند ملء الشاشة */
+        .video-player.fullscreen-active .video-container {
+            width: 100%;
+            height: 100%;
+            padding-bottom: 0; /* تجاوز الحشو الخاص بنسبة العرض إلى الارتفاع */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: transparent; /* جعل حاوية الفيديو شفافة */
+        }
+
+        .video-player.fullscreen-active .video-element { /* عنصر <video> */
+            position: static; /* السماح لـ Flexbox بالتحكم في الموضع */
+            width: auto;    /* السماح للفيديو بتحديد الحجم بناءً على نسبة العرض إلى الارتفاع */
+            height: auto;   /* السماح للفيديو بتحديد الحجم بناءً على نسبة العرض إلى الارتفاع */
+            max-width: 100%;  /* عدم تجاوز عرض الحاوية */
+            max-height: 100%; /* عدم تجاوز ارتفاع الحاوية */
+            object-fit: contain; /* مهم للحفاظ على نسبة العرض إلى الارتفاع والملاءمة */
+        }
+
+        /* لـ iframe الخاص بـ Vimeo عند ملء الشاشة */
+        /* يستهدف الـ div الذي يحيط بـ iframe بناءً على الـ style المضمن */
+        /* هذا المحدد قد يكون هشًا إذا تغير الـ style المضمن */
+        .video-player.fullscreen-active div[style*="padding:56.25% 0 0 0"] {
+            width: 100%;
+            height: 100%;
+            padding: 0 !important; /* تجاوز الحشو */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: static !important; /* إذا كان في الأصل position:relative */
+        }
+
+        .video-player.fullscreen-active div[style*="padding:56.25% 0 0 0"] iframe {
+            position: static; /* السماح لـ Flexbox بالتحكم في الموضع */
+            width: auto;    /* السماح لـ iframe بتحديد الحجم (سيفترض أن Vimeo سيتعامل مع نسبة العرض إلى الارتفاع) */
+            height: auto;   /* السماح لـ iframe بتحديد الحجم */
+            max-width: 100%;
+            max-height: 100%;
+        }
+
+        /* ... (بقية كود CSS الحالي الخاص بك) ... */
+/* --- أنماط صفحة المشاهدة الجديدة --- */
+/* ================================================================== */
+/* ===         كود CSS المطور والمبهر لصفحة المشاهدة         === */
+/* ================================================================== */
+
+/* --- التأثيرات الحركية (Animations) --- */
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes slideUp {
+    from { transform: translateY(30px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+
+/* --- الحاوية الرئيسية (Hero Container) --- */
+.watch-hero-container {
+    width: 100%;
+    height: 100vh; /* ارتفاع الشاشة الكاملة */
+    /* استخدام الهيدر الثابت: نلغي تأثيره العلوي ونبدأ من أعلى الشاشة */
+    /* تأكد من أن الهيدر لديك يحتوي على z-index: 1000 أو أعلى */
+    position: relative;
+    top: 0;
+    left: 0;
+    
+    background-size: cover;
+    background-position: center 20%; /* يركز على الجزء العلوي من الصورة */
+    display: flex;
+    align-items: flex-end; /* محاذاة المحتوى للأسفل */
+    padding: 4rem 2rem; /* حشو داخلي */
+    animation: fadeIn 1s ease-out;
+}
+
+/* طبقة التعتيم (Overlay) لجعل النص مقروءًا */
+.watch-hero-container::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(to top, rgba(10, 14, 39, 1) 10%, rgba(10, 14, 39, 0.7) 50%, rgba(10, 14, 39, 0.3) 100%);
+}
+
+.watch-hero-content {
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 1fr); /* تقسيم الشاشة بمرونة */
+    gap: 2rem;
+    align-items: flex-end; /* محاذاة العناصر للأسفل */
+    width: 100%;
+    max-width: 1400px;
+    margin: 0 auto;
+    position: relative; /* ليكون فوق الـ Overlay */
+    z-index: 2;
+    color: #fff;
+}
+
+.hero-main-info {
+    animation: slideUp 0.8s 0.2s ease-out backwards;
+}
+
+.main-video-title {
+    font-size: 3.5rem;
+    font-weight: 800; /* خط أعرض */
+    text-shadow: 0 4px 15px rgba(0,0,0,0.5);
+    margin-bottom: 1rem;
+}
+
+.meta-tags {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 1.5rem;
+}
+
+.meta-tags span {
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.2);
+    padding: 0.5rem 1rem;
+    border-radius: 50px;
+    font-size: 0.9rem;
+    backdrop-filter: blur(8px);
+    transition: background-color 0.3s;
+}
+.meta-tags span:hover {
+    background-color: rgba(255,255,255,0.2);
+}
+
+.meta-tags .rating-tag {
+    color: #ffc107;
+    border-color: #ffc107;
+    font-weight: bold;
+}
+
+.main-video-description {
+    font-size: 1.05rem;
+    line-height: 1.8;
+    color: rgba(255,255,255,0.85);
+    max-width: 75ch; /* تحديد عرض النص لسهولة القراءة */
+    margin-bottom: 2rem;
+}
+.main-video-description a { color: var(--primary-color-2); text-decoration: none; font-weight: bold; }
+
+.main-actions-row { display: flex; align-items: center; gap: 1rem; }
+
+.action-button.play-now-btn {
+    background: linear-gradient(45deg, #ff6b6b, #e95a5a);
+    color: #fff;
+    padding: 1rem 2.5rem;
+    border-radius: 50px;
+    text-decoration: none;
+    font-weight: bold;
+    font-size: 1.2rem;
+    transition: all 0.3s ease;
+    border: none;
+    box-shadow: 0 5px 20px rgba(255, 107, 107, 0.3);
+}
+.action-button.play-now-btn:hover {
+    transform: scale(1.05);
+    box-shadow: 0 8px 25px rgba(255, 107, 107, 0.5);
+}
+
+.action-icon-btn {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background: rgba(30,30,50,0.7);
+    border: 1px solid rgba(255,255,255,0.2);
+    color: #fff;
+    font-size: 1.2rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    backdrop-filter: blur(5px);
+    transition: all 0.2s;
+}
+.action-icon-btn:hover {
+    background: rgba(255,255,255,0.2);
+    transform: scale(1.1);
+}
+
+.hero-sidebar-poster {
+    animation: slideUp 0.8s 0.4s ease-out backwards;
+}
+
+.hero-sidebar-poster img {
+    width: 100%;
+    max-width: 300px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.1);
+    box-shadow: 0 15px 40px rgba(0,0,0,0.6);
+    display: block;
+    margin: 0 auto;
+}
+
+/* قسم مشغل الفيديو الفعلي */
+.video-section-player {
+    padding: 4rem 2rem;
+    background: #0a0e27;
+}
+
+
+/* === التصميم المتجاوب (Responsive) === */
+@media (max-width: 992px) {
+    .watch-hero-content {
+        grid-template-columns: 1fr; /* عمود واحد فقط */
+        justify-items: center;
+        text-align: center;
+    }
+    .hero-sidebar-poster {
+        display: none; /* إخفاء البوستر الجانبي لتوفير المساحة */
+    }
+    .main-video-title { font-size: 2.8rem; }
+    .main-video-description { max-width: 100%; }
+    .meta-tags, .main-actions-row { justify-content: center; }
+}
+
+@media (max-width: 576px) {
+    .main-actions-row { 
+        flex-direction: column; 
+        gap: 1.2rem; 
+        align-items: center; /* تعديل هنا ليكون بالمنتصف */
+    }
+    .action-button.play-now-btn { 
+        width: 80%; /* يمكنك تعديل العرض حسب ما تراه مناسبًا */
+        text-align: center; 
+    }
+    
+    /* ▼ أضف هذه القاعدة الجديدة ▼ */
+    .icon-buttons-group {
+        display: flex;
+        flex-direction: row; /* يجعل الأزرار أفقية */
+        justify-content: center;
+        gap: 1rem;
+    }
+}
+
+/* قسم مشغل الفيديو الفعلي */
+.video-section-player {
+    padding: 2rem;
+    background: #0a0e27; /* خلفية داكنة للمشغل */
+}
+
+.action-button.active {
+    background: var(--primary-color-2);
+    color: var(--background-dark-1);
+    border-color: var(--primary-color-2);
+}
+
+/* تعديلات للتجاوب */
+@media (max-width: 992px) {
+    .watch-hero-content {
+        grid-template-columns: 1fr; /* عمود واحد في الشاشات الأصغر */
+        text-align: center;
+    }
+    .hero-sidebar-poster {
+        display: none; /* إخفاء البوستر الجانبي في الشاشات الصغيرة */
+    }
+    .main-video-title { font-size: 2.5rem; }
+    .main-video-description { max-width: 100%; }
+    .meta-tags, .main-actions-row { justify-content: center; }
+}
+/* --- أنماط النافذة المنبثقة (Popup) --- */
+.popup-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(10px);
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+
+.popup-overlay.active {
+    opacity: 1;
+    visibility: visible;
+}
+
+.popup-content {
+    position: relative;
+    width: 90%;
+    max-width: 1200px;
+    background: #000;
+    border-radius: 10px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+    transform: scale(0.9);
+    transition: transform 0.3s ease;
+}
+
+.popup-overlay.active .popup-content {
+    transform: scale(1);
+}
+
+/* تعديل مشغل الفيديو داخل الـ Popup */
+.popup-content .video-player {
+    border-radius: 10px;
+    overflow: hidden;
+    border: none;
+}
+
+.close-popup-btn {
+    position: absolute;
+    top: -40px; /* فوق النافذة */
+    right: 0;
+    background: transparent;
+    border: none;
+    color: #fff;
+    font-size: 3rem;
+    cursor: pointer;
+    line-height: 1;
+    transition: transform 0.2s;
+}
+.close-popup-btn:hover {
+    transform: scale(1.2);
+}
+
+@media (max-width: 768px) {
+    .close-popup-btn {
+        top: 10px;
+        right: 10px;
+        background: rgba(0,0,0,0.5);
+        width: 35px;
+        height: 35px;
+        border-radius: 50%;
+        font-size: 2rem;
+        z-index: 2001; /* فوق الفيديو */
+    }
+    .popup-content {
+        width: 100%;
+        height: auto;
+        border-radius: 0;
+    }
+}
    </style>
 </head>
 <body dir="ltr"> <header class="header">
@@ -826,18 +1202,124 @@ $comments_data = $stmt_comments->fetchAll(PDO::FETCH_ASSOC);
                 <a href="#" class="nav-button back-button" onclick="event.preventDefault(); goBack();" aria-label="العودة للخلف">
                     <span>&larr;</span> <span>رجوع</span>
                 </a>
-                <button class="nav-button" id="navFullscreenBtn" aria-label="ملء الشاشة">ملء الشاشة</button>
+                
                 <button class="nav-button" id="navShareBtn" aria-label="مشاركة الفيديو">مشاركة</button>
             </div>
         </nav>
     </header>
 
     <main class="main-content">
-        <section class="video-section">
+      <div class="watch-hero-container" style="background-image: linear-gradient(to top, rgba(10, 14, 39, 1) 5%, rgba(10, 14, 39, 0.5) 50%), url('<?= htmlspecialchars($video['thumb_url']) ?>');">
+    <div class="watch-hero-content">
+        <div class="hero-main-info">
+            <h1 class="main-video-title"><?= htmlspecialchars($video['title']) ?></h1>
+
+            <div class="meta-tags">
+    <?php if (!empty($video['release_year'])): ?>
+        <span><?= htmlspecialchars($video['release_year']) ?></span>
+    <?php endif; ?>
+
+    <?php if (!empty($video['rating'])): ?>
+        <span class="rating-tag">⭐ <?= htmlspecialchars($video['rating']) ?></span>
+    <?php endif; ?>
+
+    <?php if (!empty($video['views'])): ?>
+        <span>👁️ <?= number_format($video['views']) ?></span>
+    <?php endif; ?>
+    
+    <?php if (!empty($video['category'])): ?>
+        <span><?= htmlspecialchars($video['category']) ?></span>
+    <?php endif; ?>
+</div>
+
+            <p class="main-video-description">
+                <?= htmlspecialchars(substr($video['description'], 0, 200)) . '...' ?>
+                <a href="#full-description">عرض المزيد</a>
+            </p>
+
+            <div class="main-actions-row">
+    <a href="#videoPlayer" id="playNowBtn" class="action-button play-now-btn">▶ عرض الآن</a>
+    <div class="icon-buttons-group">
+        <button class="action-icon-btn" id="like-btn" data-video-id="<?= $video_id ?>" title="إعجاب">
+            <span id="like-icon">👍</span> <span id="like-count"><?= $likes ?></span>
+        </button>
+        <?php if ($is_logged_in): ?>
+    <button 
+        class="action-button <?= $is_in_watchlist ? 'active' : '' ?>" 
+        id="addToWatchlistBtn"
+        data-video-id="<?= $video_id ?>">
+        <span id="watchlistIcon"><?= $is_in_watchlist ? '✔️' : '➕' ?></span>
+        <span id="watchlistText"><?= $is_in_watchlist ? 'تمت الإضافة' : 'إضافة للمشاهدة لاحقاً' ?></span>
+    </button>
+<?php endif; ?>
+        <button class="action-icon-btn" id="downloadBtn" title="تحميل">⬇️</button>
+    </div>
+</div>
+        </div>
+
+        <div class="hero-sidebar-poster">
+            <img src="<?= htmlspecialchars($video['thumb_url']) ?>" alt="Poster of <?= htmlspecialchars($video['title']) ?>">
+        </div>
+    </div>
+</div>
+ 
+<section class="video-info" id="full-description">
+    <h2 class="video-title"> <?= htmlspecialchars($video['title']) ?></h2>
+    <p><?= nl2br(htmlspecialchars($video['description'])) ?></p>
+</section>
+
+        <section class="comments-section" id="comments-section">
+            <h3>التعليقات (<span id="commentCount"><?= count($comments_data) // This will now correctly output 0 if $comments_data is empty ?></span>)</h3>
+
+            <?php if ($is_logged_in): // This will now evaluate based on the $is_logged_in variable ?>
+                <form action="add_comment.php" method="POST" class="comment-form">
+                    <img src="<?= htmlspecialchars($current_user_profile_image) // This will now use the defined variable ?>" alt="صورتك" class="user-avatar">
+                    <div class="form-content">
+                        <textarea name="comment_text" placeholder="أضف تعليقاً عاماً..." required></textarea>
+                        <input type="hidden" name="video_id" value="<?= $video_id ?>">
+                        <input type="hidden" name="parent_comment_id" value=""> <button type="submit">تعليق</button>
+                    </div>
+                </form>
+            <?php else: ?>
+                <div class="login-to-comment">
+                    <p><a href="login.php?redirect=watch.php?id=<?= $video_id ?>">سجّل الدخول</a> أو <a href="register.php?redirect=watch.php?id=<?= $video_id ?>">أنشئ حساباً</a> لإضافة تعليق.</p>
+                </div>
+            <?php endif; ?>
+
+            <div class="comments-list">
+                <?php if (empty($comments_data)): // This will now correctly check the $comments_data array ?>
+                    <p class="no-comments">لا توجد تعليقات حتى الآن. كن أول من يعلّق!</p>
+                <?php else: ?>
+                    <?php foreach ($comments_data as $comment): // This will now iterate over $comments_data (empty or filled) ?>
+                        <div class="comment-item">
+                            <img src="<?= htmlspecialchars(!empty($comment['user_profile_image']) && file_exists($comment['user_profile_image']) ? $comment['user_profile_image'] : 'images/default_avatar.png') ?>" alt="<?= htmlspecialchars($comment['username'] ?? 'User') ?>" class="user-avatar">
+                            <div class="comment-content">
+                                <div class="comment-header">
+                                    <span class="comment-user"><?= htmlspecialchars($comment['username'] ?? 'Anonymous') ?></span>
+                                    <span class="comment-date"><?= isset($comment['created_at']) ? date('M j, Y \a\t g:i a', strtotime($comment['created_at'])) : 'N/A' ?></span>
+                                </div>
+                                <p class="comment-text"><?= nl2br(htmlspecialchars($comment['comment_text'] ?? '')) ?></p>
+                                </div>
+                        </div>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+            </div>
+        </section>
+        <section class="recommended-section">
+            <h2 class="section-title">مقاطع فيديو مقترحة لك</h2>
+            <div class="recommended-grid" id="recommendedGrid">
+                </div>
+        </section>
+    </main>
+    <div class="popup-overlay" id="videoPopupOverlay">
+    <div class="popup-content">
+        <button class="close-popup-btn" id="closePopupBtn" aria-label="إغلاق">&times;</button>
+        <button class="nav-button" id="navFullscreenBtn" aria-label="ملء الشاشة">ملء الشاشة</button>
+         <section class="video-section">
             <div class="video-player" id="videoPlayer">
                 <?php if ($video['is_vimeo']): ?>
                     <div style="padding:56.25% 0 0 0;position:relative;">
-                        <iframe src="<?= htmlspecialchars($video['video_url']) ?>?autoplay=1&transparent=0&title=0&byline=0&portrait=0&muted=0"
+                        <iframe src="<?= htmlspecialchars($video['video_url']) ?>?autoplay=0&transparent=0&title=0&byline=0&portrait=0&muted=0"
                                 style="position:absolute;top:0;left:0;width:100%;height:100%;"
                                 frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>
                     </div>
@@ -887,77 +1369,10 @@ $comments_data = $stmt_comments->fetchAll(PDO::FETCH_ASSOC);
                 <?php endif; ?>
             </div>
         </section>
+        </div>
+</div>
 
-        <section class="video-info">
-            <h1 class="video-title"><?= htmlspecialchars($video['title']) ?></h1>
 
-            <div class="video-meta">
-                <div class="meta-item">👁️ <?= number_format($video['views']) ?> مشاهدات</div>
-                <div class="meta-item">📅 <?= date('Y-m-d', strtotime($video['created_at'])) ?></div>
-                <?php if(!empty($video['duration'])): ?>
-                    <div class="meta-item">⏱️ <?= htmlspecialchars($video['duration']) ?></div>
-                <?php endif; ?>
-                <?php if(!empty($video['category'])): ?>
-                    <div class="meta-item">🎬 <?= ucfirst(htmlspecialchars($video['category'])) ?></div>
-                <?php endif; ?>
-            </div>
-
-            <div class="video-description">
-                <p><?= nl2br(htmlspecialchars($video['description'])) ?></p>
-            </div>
-
-            <div class="video-actions">
-               <button class="action-button" id="like-btn" data-video-id="<?= $video_id ?>">
-                   <span id="like-icon">👍</span> <span id="like-text">إعجاب</span> <span id="like-count" style="margin-left: 5px; margin-right: 5px;"><?= $likes ?></span> </button>
-                <button class="action-button" id="addToWatchlistBtn">➕ إضافة للمشاهدة لاحقاً</button>
-                <button class="action-button" id="downloadBtn">⬇️ تحميل</button>
-                <button class="action-button" id="reportBtn">⚠️ إبلاغ</button>
-            </div>
-        </section>
-
-        <section class="comments-section" id="comments-section">
-            <h3>التعليقات (<span id="commentCount"><?= count($comments_data) // This will now correctly output 0 if $comments_data is empty ?></span>)</h3>
-
-            <?php if ($is_logged_in): // This will now evaluate based on the $is_logged_in variable ?>
-                <form action="add_comment.php" method="POST" class="comment-form">
-                    <img src="<?= htmlspecialchars($current_user_profile_image) // This will now use the defined variable ?>" alt="صورتك" class="user-avatar">
-                    <div class="form-content">
-                        <textarea name="comment_text" placeholder="أضف تعليقاً عاماً..." required></textarea>
-                        <input type="hidden" name="video_id" value="<?= $video_id ?>">
-                        <input type="hidden" name="parent_comment_id" value=""> <button type="submit">تعليق</button>
-                    </div>
-                </form>
-            <?php else: ?>
-                <div class="login-to-comment">
-                    <p><a href="login.php?redirect=watch.php?id=<?= $video_id ?>">سجّل الدخول</a> أو <a href="register.php?redirect=watch.php?id=<?= $video_id ?>">أنشئ حساباً</a> لإضافة تعليق.</p>
-                </div>
-            <?php endif; ?>
-
-            <div class="comments-list">
-                <?php if (empty($comments_data)): // This will now correctly check the $comments_data array ?>
-                    <p class="no-comments">لا توجد تعليقات حتى الآن. كن أول من يعلّق!</p>
-                <?php else: ?>
-                    <?php foreach ($comments_data as $comment): // This will now iterate over $comments_data (empty or filled) ?>
-                        <div class="comment-item">
-                            <img src="<?= htmlspecialchars(!empty($comment['user_profile_image']) && file_exists($comment['user_profile_image']) ? $comment['user_profile_image'] : 'images/default_avatar.png') ?>" alt="<?= htmlspecialchars($comment['username'] ?? 'User') ?>" class="user-avatar">
-                            <div class="comment-content">
-                                <div class="comment-header">
-                                    <span class="comment-user"><?= htmlspecialchars($comment['username'] ?? 'Anonymous') ?></span>
-                                    <span class="comment-date"><?= isset($comment['created_at']) ? date('M j, Y \a\t g:i a', strtotime($comment['created_at'])) : 'N/A' ?></span>
-                                </div>
-                                <p class="comment-text"><?= nl2br(htmlspecialchars($comment['comment_text'] ?? '')) ?></p>
-                                </div>
-                        </div>
-                    <?php endforeach; ?>
-                <?php endif; ?>
-            </div>
-        </section>
-        <section class="recommended-section">
-            <h2 class="section-title">مقاطع فيديو مقترحة لك</h2>
-            <div class="recommended-grid" id="recommendedGrid">
-                </div>
-        </section>
-    </main>
 <script>
     // Pass PHP data to JavaScript
     const currentVideoId = <?= json_encode($video_id) ?>;
@@ -1033,7 +1448,45 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  document.getElementById('addToWatchlistBtn')?.addEventListener('click', () => showNotification('Added to Watchlist!'));
+  // ابحث عن هذا السطر في كود الجافاسكريبت
+// document.getElementById('addToWatchlistBtn')?.addEventListener('click', () => showNotification('Added to Watchlist!'));
+
+// واستبدله بهذا الكود الكامل
+const watchlistBtn = document.getElementById('addToWatchlistBtn');
+if (watchlistBtn) {
+    watchlistBtn.addEventListener('click', () => {
+        const videoId = watchlistBtn.dataset.videoId;
+        const icon = document.getElementById('watchlistIcon');
+        const text = document.getElementById('watchlistText');
+
+        // تحديد الإجراء بناءً على حالة الزر الحالية
+        const isAdded = watchlistBtn.classList.contains('active');
+        const action = isAdded ? 'remove' : 'add';
+
+        fetch('watchlist_action.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+            body: `video_id=<span class="math-inline">\{videoId\}&action\=</span>{action}`
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                // تحديث شكل الزر بناءً على الرد
+                watchlistBtn.classList.toggle('active');
+                const stillAdded = watchlistBtn.classList.contains('active');
+                icon.textContent = stillAdded ? '✔️' : '➕';
+                text.textContent = stillAdded ? 'تمت الإضافة' : 'إضافة للمشاهدة لاحقاً';
+                showNotification(data.message);
+            } else {
+                showNotification(data.message || 'حدث خطأ ما.');
+            }
+        })
+        .catch(err => {
+            console.error('Watchlist fetch error:', err);
+            showNotification('خطأ في الاتصال بالخادم.');
+        });
+    });
+}
   document.getElementById('downloadBtn')?.addEventListener('click', downloadVideo);
   document.getElementById('reportBtn')?.addEventListener('click', () => showNotification('Video reported. Thank you.'));
   
@@ -1604,7 +2057,234 @@ document.addEventListener('visibilitychange', () => {
     if (video && !video.paused && document.hidden) video.pause();
 });
 
+
+document.addEventListener('DOMContentLoaded', () => {
+    // تمرير المتغيرات من PHP إلى جافاسكريبت
+    const currentVideoId = <?= json_encode($video_id) ?>;
+    const isVimeo = <?= json_encode((bool) $video['is_vimeo']) ?>;
+    
+    // مفتاح لتخزين حالة المشاهدة في جلسة المتصفح الحالية
+    const viewCountedKey = 'view_counted_for_video_' + currentVideoId;
+    let viewHasBeenCountedThisSession = sessionStorage.getItem(viewCountedKey) === 'true';
+
+    // إذا تم احتساب المشاهدة بالفعل في هذه الجلسة، نتوقف هنا
+    if (viewHasBeenCountedThisSession) {
+        console.log('View already counted for this video in this session.');
+        return;
+    }
+
+    // متغيرات لتتبع منطق المشاهدة
+    let requiredWatchTime = 0;      // المدة المطلوبة للمشاهدة (ربع الفيديو)
+    let accumulatedWatchTime = 0;   // المدة التي شاهدها المستخدم فعلاً
+    let lastTimeUpdate = 0;         // آخر نقطة زمنية تم تسجيلها
+    let isVideoPlaying = false;     // حالة الفيديو (يعمل/متوقف)
+    
+    // --- دالة لإرسال طلب تسجيل المشاهدة ---
+    function recordView() {
+        if (viewHasBeenCountedThisSession) return;
+        
+        viewHasBeenCountedThisSession = true; // نمنع إرسال الطلب مرة أخرى
+        sessionStorage.setItem(viewCountedKey, 'true');
+
+        console.log('Threshold reached. Recording view for video ID:', currentVideoId);
+        fetch('record_view.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+            body: 'video_id=' + encodeURIComponent(currentVideoId)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                console.log('View recorded successfully via server.', data);
+                // تحديث عدد المشاهدات في الصفحة مباشرة
+                const viewsDisplayElement = document.querySelector('.video-meta .meta-item:first-child');
+                if (viewsDisplayElement && data.views) {
+                    viewsDisplayElement.innerHTML = `👁️ ${Number(data.views).toLocaleString()} مشاهدات`;
+                }
+            } else {
+                console.error('Failed to record view:', data.message);
+                // إذا فشل الخادم، نسمح بمحاولة أخرى في حال قام المستخدم بتحديث الصفحة
+                sessionStorage.removeItem(viewCountedKey);
+                viewHasBeenCountedThisSession = false;
+            }
+        })
+        .catch(error => {
+            console.error('Error recording view:', error);
+            sessionStorage.removeItem(viewCountedKey);
+            viewHasBeenCountedThisSession = false;
+        });
+    }
+
+    function checkAndRecordView() {
+        if (!viewHasBeenCountedThisSession && requiredWatchTime > 0 && accumulatedWatchTime >= requiredWatchTime) {
+            recordView();
+        }
+    }
+
+    if (isVimeo) {
+        // --- منطق Vimeo ---
+        const iframe = document.querySelector('iframe[src*="vimeo.com"]');
+        if (iframe) {
+            const player = new Vimeo.Player(iframe);
+
+            player.getDuration().then(duration => {
+                if (duration > 0) {
+                    requiredWatchTime = duration / 4; // ربع مدة الفيديو
+                }
+            });
+
+            player.on('play', () => {
+                isVideoPlaying = true;
+                player.getCurrentTime().then(time => { lastTimeUpdate = time; });
+            });
+
+            player.on('pause', () => { isVideoPlaying = false; });
+            player.on('ended', () => { isVideoPlaying = false; checkAndRecordView(); });
+
+            player.on('timeupdate', (data) => {
+                if (!isVideoPlaying || viewHasBeenCountedThisSession || requiredWatchTime === 0) return;
+                
+                const currentTime = data.seconds;
+                if (currentTime > lastTimeUpdate) {
+                     accumulatedWatchTime += (currentTime - lastTimeUpdate);
+                }
+                lastTimeUpdate = currentTime;
+                checkAndRecordView();
+            });
+        }
+    } else {
+        // --- منطق الفيديو المحلي (نفس الكود السابق لديك) ---
+        const videoElement = document.getElementById('localVideo');
+        if (videoElement) {
+            videoElement.addEventListener('loadedmetadata', () => {
+                if (videoElement.duration > 0) {
+                    requiredWatchTime = videoElement.duration / 4;
+                }
+            });
+            videoElement.addEventListener('play', () => {
+                isVideoPlaying = true;
+                lastTimeUpdate = videoElement.currentTime;
+            });
+            videoElement.addEventListener('pause', () => { isVideoPlaying = false; });
+            videoElement.addEventListener('ended', () => { isVideoPlaying = false; checkAndRecordView(); });
+
+            videoElement.addEventListener('timeupdate', () => {
+                if (!isVideoPlaying || viewHasBeenCountedThisSession || requiredWatchTime === 0) return;
+
+                const currentTime = videoElement.currentTime;
+                 if (currentTime > lastTimeUpdate) {
+                    accumulatedWatchTime += (currentTime - lastTimeUpdate);
+                }
+                lastTimeUpdate = currentTime;
+                checkAndRecordView();
+            });
+        }
+    }
+});
+
+
+
+
+
+
+
+//changes
+document.addEventListener('DOMContentLoaded', () => {
+    const playButton = document.querySelector('.play-now-btn');
+    const videoPlayerSection = document.getElementById('videoPlayer');
+
+    if (playButton && videoPlayerSection) {
+        playButton.addEventListener('click', (event) => {
+            event.preventDefault(); // منع السلوك الافتراضي للرابط
+            videoPlayerSection.scrollIntoView({
+                behavior: 'smooth',
+                block: 'center'
+            });
+        });
+    }
+    
+    // ... باقي كود الجافاسكريبت لديك
+});
 // Removed redundant escapeHTML function, htmlspecialchars (JS version) is kept.
+
+
+/* --- كود تفعيل نافذة الفيديو المنبثقة --- */
+document.addEventListener('DOMContentLoaded', () => {
+    const playNowBtn = document.getElementById('playNowBtn');
+    const popupOverlay = document.getElementById('videoPopupOverlay');
+    const closePopupBtn = document.getElementById('closePopupBtn');
+    
+    // --- متغيرات للوصول إلى مشغل الفيديو ---
+    // هذه المتغيرات قد تكون معرفة بالفعل في مكان آخر من السكريبت لديك
+    const localVideo = document.getElementById('localVideo');
+    let vimeoPlayer = null; 
+    const vimeoIframe = document.querySelector('.popup-content iframe');
+    if (vimeoIframe) {
+        vimeoPlayer = new Vimeo.Player(vimeoIframe);
+    }
+    
+    function openPopup() {
+        if(popupOverlay) popupOverlay.classList.add('active');
+    }
+
+    function closePopup() {
+        if(popupOverlay) popupOverlay.classList.remove('active');
+        
+        // --- مهم جدًا: إيقاف الفيديو عند إغلاق النافذة ---
+        if (localVideo) {
+            localVideo.pause();
+        }
+        if (vimeoPlayer) {
+            vimeoPlayer.pause();
+        }
+    }
+
+    if (playNowBtn) {
+        playNowBtn.addEventListener('click', (e) => {
+            e.preventDefault(); // نمنع سلوك الرابط الافتراضي
+            openPopup();
+        });
+    }
+
+    if (closePopupBtn) {
+        closePopupBtn.addEventListener('click', closePopup);
+    }
+
+    // إغلاق النافذة عند الضغط على الخلفية السوداء
+    if (popupOverlay) {
+        popupOverlay.addEventListener('click', (e) => {
+            // نتأكد أن الضغط كان على الخلفية نفسها وليس على المحتوى
+            if (e.target === popupOverlay) {
+                closePopup();
+            }
+        });
+    }
+
+    // إغلاق النافذة عند الضغط على زر Escape
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && popupOverlay.classList.contains('active')) {
+            closePopup();
+        }
+    });
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+    const playButton = document.querySelector('.play-now-btn');
+    const videoPlayerSection = document.getElementById('videoPlayer');
+
+    if (playButton && videoPlayerSection) {
+        playButton.addEventListener('click', (event) => {
+            event.preventDefault(); // منع السلوك الافتراضي للرابط
+            videoPlayerSection.scrollIntoView({
+                behavior: 'smooth',
+                block: 'center'
+            });
+        });
+    }
+    
+    // ... باقي كود الجافاسكريبت لديك
+});
 </script>
+
 </body>
 </html>
